@@ -10,7 +10,7 @@ This project is a RESTful API built with FastAPI for managing a book collection.
 * Complete test coverage
 * Auto-generated API documentation
 * CORS middleware enabled
-* Continuous Deployment
+* Continuous Integration/Continuous Deployment
 * Nginx reverse proxy configuration
 
 ## Project Structure
@@ -82,6 +82,22 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 * `PUT /api/v1/books/{book_id}` - Update a book
 * `DELETE /api/v1/books/{book_id}` - Delete a book
 
+### Missing API
+```code 
+@router.get("/{book_id}", response_model=Book, status_code=status.HTTP_200_OK)
+async def get_book(book_id: int) -> Book:
+    book = db.books.get(book_id)
+    if book is None:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": "Book not found"}
+        )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content=book.model_dump()
+    )
+```
+
 ### Example Response
 
 For a GET request to `/api/v1/books/{book_id}`:
@@ -130,6 +146,11 @@ sudo systemctl start nginx
 sudo systemctl enable nginx
 ```
 
+Verify that Nginx is installed:
+```bash
+nginx -v
+```
+
 #### Step 3: Deploy the FastAPI Application
 1. Clone your repository:
    ```bash
@@ -166,6 +187,7 @@ sudo systemctl enable nginx
    sudo systemctl daemon-reload
    sudo systemctl enable fastapi
    sudo systemctl start fastapi
+   sudo systemctl status fastapi
    ```
 
 #### Step 4: Configure Nginx as a Reverse Proxy
@@ -198,35 +220,64 @@ sudo systemctl enable nginx
    curl http://localhost
    ```
 
-### Continuous Deployment with GitHub Actions and Render
+### CI/CD with GitHub Actions
 
-1. Add a Render API Key in GitHub Secrets:
-   * Go to Repo Settings → Secrets → Actions
-   * Add a new secret: `RENDER_API_KEY`
+#### Step 5: Set Up CI/CD with GitHub Actions
+1. Create `.github/workflows/ci.yml` for Continuous Integration:
+   ```yaml
+   name: CI
+   on: [push, pull_request]
+   jobs:
+     test:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v3
+         - name: Set up Python
+           uses: actions/setup-python@v3
+           with:
+             python-version: '3.10'
+         - name: Install dependencies
+           run: |
+             python -m venv venv
+             source venv/bin/activate
+             pip install -r requirements.txt
+         - name: Run Tests
+           run: |
+             source venv/bin/activate
+             pytest
+   ```
 
-2. Create `.github/workflows/deploy.yml`:
-```yaml
-name: Render Deployment
+2. Create `.github/workflows/cd.yml` for Continuous Deployment:
+   ```yaml
+   name: CD
+   on:
+     push:
+       branches:
+         - main
 
-on:
-  push:
-    branches:
-      - main
+   jobs:
+     deploy:
+       runs-on: ubuntu-latest
+       steps:
+         - name: Deploy via SSH
+           uses: appleboy/ssh-action@master
+           with:
+             host: ${{ secrets.SERVER_IP }}
+             username: ubuntu
+             key: ${{ secrets.SSH_PRIVATE_KEY }}
+             script: |
+               cd /home/ubuntu/fastapi-app
+               git pull origin main
+               source venv/bin/activate
+               pip install -r requirements.txt
+               sudo systemctl restart fastapi
+               sudo systemctl restart nginx
+   ```
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      
-      - name: Deploy to Render
-        env:
-          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-        run: |
-          curl -fsSL https://cli.render.com/install.sh | sh
-          render deploy
-```
+#### Step 6: Adding Secrets to GitHub
+Go to your repository settings on GitHub and add the following secrets under `Settings -> Secrets and Variables -> Actions`:
+* `SERVER_IP`: Your EC2 instance IP
+* `SSH_PRIVATE_KEY`: Your private SSH key (from `.pem` file)
 
 ## Error Handling
 The API includes proper error handling for:
